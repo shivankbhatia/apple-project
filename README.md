@@ -3,16 +3,32 @@
 Kafka + Flink + Spark + Delta Lake + Hive fraud detection system combining
 real-time transaction scoring with nightly batch retraining.
 
+**Stack:** Apache Kafka · PyFlink · Apache Spark · Delta Lake · Hive · XGBoost · Docker Compose
 
-# Key Findings & Feature Investigation
+---
 
-## Class Imbalance
+## Architecture
+
+A Lambda architecture with two independent scoring paths reconciled against each other:
+
+- **Speed layer** — PyFlink consumes transactions from Kafka in real time, maintains per-account
+  stateful features, and scores each transaction with a pre-trained XGBoost model as it arrives.
+- **Batch layer** — Apache Spark periodically reprocesses the full transaction history, retrains
+  the model, and writes curated, deduplicated results to Delta Lake, queryable via Hive.
+- **Reconciliation** — Speed-layer and batch-layer predictions for the same transactions are
+  compared to measure how much the real-time approximation drifts from the batch "ground truth."
+
+---
+
+## Key Findings & Feature Investigation
+
+### Class Imbalance
 - Fraud represents **0.129%** of all transactions.
 - Fraud is concentrated entirely in **TRANSFER** and **CASH_OUT** transaction types.
 - **PAYMENT**, **CASH_IN**, and **DEBIT** contain **0% fraud**.
 - The pipeline filters transactions to only **TRANSFER** and **CASH_OUT** before scoring, reducing the streaming volume by **~56%** while maintaining **100% fraud recall**.
 
-## Leakage Investigation
+### Leakage Investigation
 Initial feature engineering included:
 - `orig_balance_error`
 - `dest_balance_error`
@@ -21,37 +37,26 @@ These features measured the deviation between expected and actual account balanc
 
 A single-feature AUC analysis showed that `orig_balance_error` alone achieved an **AUC of 0.947**, indicating an unusually strong predictive signal. Further investigation revealed this was caused by a **dataset artifact** rather than genuine fraud behavior.
 
-### Investigation Results
+**Investigation results:**
 - **32.9%** of legitimate transactions have untracked (zero-value) origin balances in the PaySim simulator.
 - **99.5%** of fraudulent transactions exhibit mathematically perfect balance reconciliation.
 
 This behavior is a **known characteristic of the PaySim simulator**, not a realistic fraud indicator. Consequently, both balance-error features were removed from the final feature set.
 
-## Remaining Dominant Feature
+### Remaining Dominant Feature
 After removing the balance-error features:
 
 - `amount_to_balance_ratio` (transaction amount divided by origin balance) accounts for approximately **96%** of model decisions.
 - Fraudulent transactions cluster around ratios of **0.9999–1.0**, representing near-total account drainage.
 
-This pattern reflects PaySim's intended fraud simulation, where fraudulent behavior follows an **account-takeover** scenario:
+This pattern reflects PaySim's intended fraud simulation, where fraudulent behavior follows an **account-takeover** scenario: drain the victim's account, then cash out. This is considerably more deterministic than real-world fraud, where transaction amounts are typically more diverse — a limitation of the dataset's fraud-generation process rather than the modeling approach.
 
-1. Drain the victim's account.
-2. Cash out the stolen funds.
-
-While this represents a plausible fraud strategy, it is considerably more deterministic than real-world financial fraud, where transaction amounts are typically much more diverse. This is a limitation of the dataset's fraud-generation process rather than the modeling approach.
-
-## Validation Methodology
+### Validation Methodology
 Model evaluation uses **walk-forward (expanding-window) validation** across **5 temporal folds** instead of a single random or time-based split.
 
-This decision was made after observing that:
+This decision was made after observing that PaySim's transaction volume drops sharply after approximately **step 400**, while the absolute number of fraudulent transactions remains roughly constant — so the fraud rate varies by more than **20×** across different periods despite stable fraud counts. Walk-forward validation avoids evaluating on a single, potentially unrepresentative time window.
 
-- PaySim's transaction volume drops sharply after approximately **step 400**.
-- The absolute number of fraudulent transactions remains roughly constant.
-- As a result, the fraud rate varies by more than **20×** across different periods despite stable fraud counts.
-
-Walk-forward validation provides a more reliable estimate of real-world performance by avoiding evaluation on a single potentially unrepresentative time window.
-
-## Final Model Performance
+### Final Model Performance
 
 **Model:** XGBoost
 
@@ -62,8 +67,115 @@ Walk-forward validation provides a more reliable estimate of real-world performa
 | PR-AUC | **0.940 ± 0.049** |
 | Validation | 5-fold Walk-Forward |
 
-### Final Features
+**Final features:**
 1. `amount_to_balance_ratio`
 2. `amount`
 3. `dest_txn_count_so_far`
 4. `is_transfer_type`
+
+---
+
+## Layer Agreement (Speed vs. Batch)
+
+The speed layer's real-time predictions were reconciled against the batch layer's recomputed
+predictions for the same transactions:
+
+| Metric | Value |
+|---|---:|
+| Speed / batch prediction agreement | **98.43%** |
+
+**Methodology:** `reconciliation/reconcile.py` joins speed-layer output (Delta table, written via
+`staging_to_delta.py`) against batch-layer output (Hive table, written by `batch_retrain.py`) on
+`transaction_id`, and computes the percentage of matched records where both layers agree on the
+fraud/not-fraud classification at a 0.5 probability threshold.
+
+---
+
+## Performance
+
+### Speed Layer — End-to-End Scoring Latency
+
+`flink-job/fraud_scorer.py` stamps a `scored_at` timestamp immediately after XGBoost inference,
+right before the sink. This is diffed against `event_timestamp`, which the Kafka producer
+(`producer/kafka_producer.py`) attaches at publish time. `latency_ms = scored_at - event_timestamp`
+therefore covers **Kafka publish → consume → stateful feature computation → XGBoost inference**.
+It does not include producer-side serialization or FileSink checkpoint flush delay (checkpointed
+every 10s), so true "event to durable output" latency runs slightly higher, especially at the tail.
+
+Measured over **18,600 records** replayed at high throughput against a **single-partition,
+single-parallelism** (`env.set_parallelism(1)`) local deployment:
+
+| Percentile | Latency |
+|---|---:|
+| Min (best case) | **270 ms** |
+| p50 | **8,054 ms** |
+| p95 | **20,922 ms** |
+| p99 | **21,386 ms** |
+| Max | **21,490 ms** |
+| Mean | **9,393 ms** |
+
+**Interpretation:** the 270ms floor is the true per-record cost with no queueing — Kafka consume,
+feature lookup, and inference with nothing waiting ahead of it. The steep climb from p50 to p95/p99,
+plateauing near the max, is characteristic of **consumer-side backpressure**: the producer publishes
+faster than a single Flink subtask can drain the partition, so a backlog builds and later messages
+wait longer before being picked up. p95/p99/max converging to a similar value (rather than climbing
+indefinitely) indicates the system reached steady-state lag rather than unbounded queue growth. The
+straightforward fix — not yet implemented — is increasing Kafka partition count and Flink parallelism
+so multiple subtasks can drain the topic concurrently.
+
+Latencies were computed with `reconciliation/latency_report.py`, which reads the Delta table
+written by `staging_to_delta.py` and calculates percentile statistics over all non-null
+`latency_ms` values.
+
+### Batch Layer — End-to-End Job Timing
+
+`spark-batch/batch_retrain.py` wraps each pipeline stage with `time.perf_counter()` checkpoints,
+writing a per-stage breakdown to `data/batch_job_timings.json` on completion.
+
+Measured over the **full filtered dataset (2,770,409 TRANSFER/CASH_OUT transactions)**:
+
+| Stage | Time | Share of total |
+|---|---:|---:|
+| Load + filter (CSV → Spark DataFrame) | 7.35s | 13% |
+| Feature engineering (Spark transforms) | 5.53s | 10% |
+| Spark → pandas conversion | 15.45s | 27% |
+| XGBoost training | 6.33s | 11% |
+| XGBoost inference + eval | 0.53s | 1% |
+| Hive table write | 19.00s | 34% |
+| **Total wall-clock** | **56.60s** | 100% |
+
+**Throughput:** 2,770,409 rows / 56.60s ≈ **48,946 records/sec** (end-to-end, including model
+training).
+
+**Interpretation:** model training itself (6.33s) is a small fraction of total runtime. The two
+dominant costs are the Spark→pandas materialization (27%) and the Hive write (34%) — together
+over 60% of the job. This indicates the bottleneck is data movement between engines, not compute,
+and is where future optimization effort would have the highest return (e.g., avoiding full
+in-memory pandas conversion, or a more direct Delta→Hive write path).
+
+---
+
+## Known Limitations
+
+- Speed-layer latency figures reflect a **local, single-partition deployment** with no autoscaling
+  or partition tuning — they characterize the architecture's behavior under load, not a
+  production-tuned SLA.
+- PaySim is a **simulated** dataset with a deterministic fraud-generation process (see Remaining
+  Dominant Feature, above); reported AUC/PR-AUC figures reflect performance on this simulation
+  and should not be read as real-world fraud detection accuracy.
+- Batch-layer timing was measured on a MacBook Air (Apple Silicon, local Docker Compose stack),
+  not a distributed cluster — absolute numbers won't transfer directly to a production Spark
+  cluster, but the relative stage breakdown (where time is spent) is architecture-independent.
+
+---
+
+## Repository Structure
+
+```
+producer/            # Kafka producer replaying PaySim transactions with event timestamps
+flink-job/            # PyFlink speed-layer stateful stream scoring
+spark-batch/          # Spark batch retraining + Hive/Delta Lake writes
+reconciliation/       # Speed/batch agreement + latency percentile reporting
+data/                 # Local outputs: staging JSON, Delta table, timing/latency reports
+docker-compose.yml    # Kafka, Zookeeper, Flink, Hive Metastore, Postgres
+```
