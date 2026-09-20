@@ -41,7 +41,7 @@ Kafka (click event stream)
 - [x] Phase 0 — infrastructure layout, explicit Kafka topics, Hive warehouse mount, feature-package scaffold, and host requirements
 - [x] Phase 1 — TalkingData sample, bootstrap labels, and EDA
 - [x] Phase 2 — shared feature implementation and parity tests
-- [ ] Phase 3 — baseline model and incremental retraining
+- [x] Phase 3 — baseline model and incremental retraining
 - [ ] Phase 4 — click producer and schema validation
 - [ ] Phase 5 — PyFlink scorer and alerts
 - [ ] Phase 6 — Spark retraining, Hive, and Delta
