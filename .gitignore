@@ -3,7 +3,9 @@ __pycache__/
 *.pyc
 .DS_Store
 data/*.csv
+data/*.json
 data/*.zip
+Raw Data/
 data/staging/
 data/checkpoints/
 data/delta/

@@ -24,7 +24,7 @@ spark.sparkContext.setLogLevel("WARN")
 
 base_dir = os.path.dirname(os.path.abspath(__file__))
 staging_path = os.path.join(base_dir, "..", "data", "staging")
-delta_path = os.path.join(base_dir, "..", "data", "delta", "scored_transactions")
+delta_path = os.path.join(base_dir, "..", "data", "delta", "scored_clicks")
 
 # recursiveFileLookup is required because Flink's FileSink writes into
 # hourly bucket subdirectories (e.g. data/staging/2026-07-03--16/...),

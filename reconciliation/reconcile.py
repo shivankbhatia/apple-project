@@ -18,12 +18,12 @@ spark = configure_spark_with_delta_pip(builder).getOrCreate()
 spark.sparkContext.setLogLevel("WARN")
 
 # --- Load speed layer predictions (Flink -> Delta, via Day 3-4 pipeline) ---
-delta_path = os.path.join(base_dir, "..", "data", "delta", "scored_transactions")
+delta_path = os.path.join(base_dir, "..", "data", "delta", "scored_clicks")
 speed_df = spark.read.format("delta").load(delta_path)
 print(f"Speed layer (Delta): {speed_df.count()} records")
 
 # --- Load batch layer predictions (Spark -> Hive, via Day 5 pipeline) ---
-batch_df = spark.table("fraud_detection.batch_scored_transactions")
+batch_df = spark.table("fraud_detection.batch_scored_clicks")
 print(f"Batch layer (Hive): {batch_df.count()} records")
 
 # --- Join on txn_key ---

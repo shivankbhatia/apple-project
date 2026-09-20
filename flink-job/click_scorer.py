@@ -1,4 +1,4 @@
-# flink-job/fraud_scorer.py — Phase 3.3: full scoring
+# flink-job/click_scorer.py — Phase 3.3: full scoring
 import json
 import os
 import pickle
@@ -25,7 +25,7 @@ class FraudScorer(KeyedProcessFunction):
         self.txn_count_state = runtime_context.get_state(state_descriptor)
 
         # Load model once per task instance, not per record
-        model_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "models", "fraud_model.pkl")
+        model_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "models", "click_fraud_model.pkl")
         with open(model_path, 'rb') as f:
             self.model = pickle.load(f)
 
@@ -88,8 +88,8 @@ def main():
     kafka_source = (
         KafkaSource.builder()
         .set_bootstrap_servers("localhost:9092")
-        .set_topics("transactions")
-        .set_group_id("fraud-scorer-group-v4")
+        .set_topics("clicks")
+        .set_group_id("click-scorer-group-v1")
         .set_starting_offsets(KafkaOffsetsInitializer.earliest())
         .set_value_only_deserializer(SimpleStringSchema())
         .build()
@@ -128,7 +128,7 @@ def main():
 
     result_stream.sink_to(file_sink)
 
-    env.execute("fraud-scorer-full")
+    env.execute("click-scorer")
 
 
 if __name__ == '__main__':

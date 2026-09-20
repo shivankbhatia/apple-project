@@ -105,7 +105,7 @@ print(f"Batch model PR-AUC: {average_precision_score(y_test, probs):.4f}")
 
 # Save as a distinct artifact from Day 1's original model - Day 6 reconciliation
 # compares predictions from both models against each other.
-batch_model_path = os.path.join(base_dir, "..", "models", "fraud_model_batch.pkl")
+batch_model_path = os.path.join(base_dir, "..", "models", "click_fraud_model_batch.pkl")
 with open(batch_model_path, "wb") as f:
     pickle.dump(batch_model, f)
 print(f"Batch model saved to {batch_model_path}")
@@ -120,13 +120,13 @@ test_df["batch_is_flagged"] = (probs >= 0.5).astype(int)
 
 result_spark_df = spark.createDataFrame(test_df)
 
-spark.sql("CREATE DATABASE IF NOT EXISTS fraud_detection")
-result_spark_df.write.mode("overwrite").saveAsTable("fraud_detection.batch_scored_transactions")
-print("Written to Hive table: fraud_detection.batch_scored_transactions")
+spark.sql("CREATE DATABASE IF NOT EXISTS ad_fraud")
+result_spark_df.write.mode("overwrite").saveAsTable("fraud_detection.batch_scored_clicks")
+print("Written to Hive table: fraud_detection.batch_scored_clicks")
 
 # --- Verification ---
 spark.sql(
     "SELECT COUNT(*) as total, SUM(isFraud) as fraud_count "
-    "FROM fraud_detection.batch_scored_transactions"
+    "FROM fraud_detection.batch_scored_clicks"
 ).show()
-spark.sql("SELECT * FROM fraud_detection.batch_scored_transactions LIMIT 5").show(truncate=False)
+spark.sql("SELECT * FROM fraud_detection.batch_scored_clicks LIMIT 5").show(truncate=False)

@@ -73,7 +73,9 @@ def replay_transactions(csv_path, topic, speed_multiplier=1.0, limit=None, start
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--csv', default='./data/PS_20174392719_1491204439457_log.csv')
-    parser.add_argument('--topic', default='transactions')
+    # Phase 4 replaces this PaySim replay implementation; retain the correct
+    # infrastructure default while the surrounding data contract is rebuilt.
+    parser.add_argument('--topic', default='clicks')
     parser.add_argument('--speed', type=float, default=3600.0,
                          help='Speed multiplier. 3600 = 1 sim-hour per real second. Use higher for faster testing.')
     parser.add_argument('--limit', type=int, default=None,

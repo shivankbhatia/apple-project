@@ -1,3 +1,46 @@
+# Ad-Click Fraud / Invalid-Traffic Detection — Lambda Architecture
+
+> **Phase 0 status:** this repository is being retargeted in place from the
+> completed PaySim transaction demo to TalkingData ad-click / invalid-traffic
+> detection. The prior implementation remains available in this repository's
+> Git history. Its narrative is retained below as an archive only; its metrics,
+> schema, and operational claims do **not** describe the ad-click pipeline.
+
+## Target architecture
+
+Kafka carries JSON click events on `clicks`, keyed by `ip` (three partitions).
+PyFlink computes processing-time, incremental click features and writes scored
+clicks to staging; Spark retrains on delayed labels, writes Delta and Hive
+outputs, and exports campaign statistics for the speed layer. Flagged clicks
+are additionally published to `click_alerts` for monitoring.
+
+| Component | Target identifier |
+| --- | --- |
+| Kafka input / alert topics | `clicks` / `click_alerts` |
+| Flink job | `click_scorer.py` |
+| Delta path | `data/delta/scored_clicks` |
+| Hive table | `ad_fraud.batch_scored_clicks` |
+| Model artifacts | `models/click_fraud_model*.pkl` |
+
+The shared `features/` package is the feature contract for both Flink and
+Spark. Phase 2 will add its deterministic implementations and parity tests.
+
+### Local setup
+
+```bash
+cd fraud_lambda
+docker compose up -d
+docker compose ps
+```
+
+`kafka-topic-init` provisions the two topics idempotently. The Hive warehouse
+is mounted at `./data/hive-warehouse`, not at a machine-specific absolute
+path. Host-side dependencies are listed in `requirements.txt`; PyFlink is
+normally run inside the supplied Flink Docker image rather than installed
+natively.
+
+## Prior project archive (PaySim; not current)
+
 # Real-Time Fraud Detection — Lambda Architecture
 
 Kafka + Flink + Spark + Delta Lake + Hive fraud detection system combining
