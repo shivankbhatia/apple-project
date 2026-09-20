@@ -60,6 +60,7 @@ services:
       - |
         FLINK_PROPERTIES=
         jobmanager.rpc.address: flink-jobmanager
+      - PYTHONPATH=/opt/fraud_lambda
     volumes:
       - ./flink-job:/opt/flink-job
       - ./:/opt/fraud_lambda
@@ -79,6 +80,7 @@ services:
         jobmanager.rpc.address: flink-jobmanager
         taskmanager.numberOfTaskSlots: 2
         taskmanager.memory.process.size: 1024m
+      - PYTHONPATH=/opt/fraud_lambda
     volumes:
       - ./flink-job:/opt/flink-job
       - ./:/opt/fraud_lambda

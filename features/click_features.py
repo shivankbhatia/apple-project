@@ -30,6 +30,9 @@ FEATURE_ORDER = [
 
 WINDOW_SECONDS = (60, 300, 3600)
 
+def _new_window_deques() -> dict[int, Deque[float]]:
+    return {seconds: deque() for seconds in WINDOW_SECONDS}
+
 
 def parse_timestamp(value: Any) -> float:
     """Return epoch seconds for TalkingData or ISO-8601 timestamps."""
@@ -91,12 +94,9 @@ class IncrementalClickFeatures:
         # One queue per window makes each event append/pop amortized O(1).
         # A single 1-hour queue scanned three times per record becomes
         # quadratic for TalkingData's heavily reused device identifiers.
-        self.ip_timestamps: dict[str, dict[int, Deque[float]]] = defaultdict(
-            lambda: {seconds: deque() for seconds in WINDOW_SECONDS}
-        )
-        self.device_timestamps: dict[str, dict[int, Deque[float]]] = defaultdict(
-            lambda: {seconds: deque() for seconds in WINDOW_SECONDS}
-        )
+        self.ip_timestamps: dict[str, dict[int, Deque[float]]] = defaultdict(_new_window_deques)
+        self.device_timestamps: dict[str, dict[int, Deque[float]]] = defaultdict(_new_window_deques)
+
         self.ip_fingerprints: dict[str, Deque[tuple[float, tuple[str, str]]]] = defaultdict(deque)
         self.last_ip_timestamp: dict[str, float] = {}
 
