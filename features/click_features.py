@@ -88,20 +88,23 @@ class IncrementalClickFeatures:
     ) -> None:
         self.campaign_stats = campaign_stats or {}
         self.publisher_stats = publisher_stats or {}
-        self.ip_timestamps: dict[str, Deque[float]] = defaultdict(deque)
-        self.device_timestamps: dict[str, Deque[float]] = defaultdict(deque)
+        # One queue per window makes each event append/pop amortized O(1).
+        # A single 1-hour queue scanned three times per record becomes
+        # quadratic for TalkingData's heavily reused device identifiers.
+        self.ip_timestamps: dict[str, dict[int, Deque[float]]] = defaultdict(
+            lambda: {seconds: deque() for seconds in WINDOW_SECONDS}
+        )
+        self.device_timestamps: dict[str, dict[int, Deque[float]]] = defaultdict(
+            lambda: {seconds: deque() for seconds in WINDOW_SECONDS}
+        )
         self.ip_fingerprints: dict[str, Deque[tuple[float, tuple[str, str]]]] = defaultdict(deque)
         self.last_ip_timestamp: dict[str, float] = {}
 
     @staticmethod
-    def _trim_timestamps(values: Deque[float], now: float) -> None:
-        cutoff = now - max(WINDOW_SECONDS)
+    def _trim_timestamps(values: Deque[float], now: float, seconds: int) -> None:
+        cutoff = now - seconds
         while values and values[0] < cutoff:
             values.popleft()
-
-    @staticmethod
-    def _count_within(values: Deque[float], now: float, seconds: int) -> int:
-        return sum(timestamp >= now - seconds for timestamp in values)
 
     @staticmethod
     def _trim_fingerprints(values: Deque[tuple[float, tuple[str, str]]], now: float) -> None:
@@ -119,22 +122,24 @@ class IncrementalClickFeatures:
         ip_values = self.ip_timestamps[ip]
         device_values = self.device_timestamps[device]
         fingerprint_values = self.ip_fingerprints[ip]
-        self._trim_timestamps(ip_values, now)
-        self._trim_timestamps(device_values, now)
         self._trim_fingerprints(fingerprint_values, now)
 
         previous_timestamp = self.last_ip_timestamp.get(ip)
         result["ip_inter_click_gap_seconds"] = (
             max(0.0, now - previous_timestamp) if previous_timestamp is not None else 0.0
         )
-        ip_values.append(now)
-        device_values.append(now)
         fingerprint_values.append((now, fingerprint))
         self.last_ip_timestamp[ip] = now
 
         for seconds, suffix in zip(WINDOW_SECONDS, ("1m", "5m", "1h")):
-            result[f"ip_clicks_{suffix}"] = self._count_within(ip_values, now, seconds)
-            result[f"device_clicks_{suffix}"] = self._count_within(device_values, now, seconds)
+            ip_window = ip_values[seconds]
+            device_window = device_values[seconds]
+            self._trim_timestamps(ip_window, now, seconds)
+            self._trim_timestamps(device_window, now, seconds)
+            ip_window.append(now)
+            device_window.append(now)
+            result[f"ip_clicks_{suffix}"] = len(ip_window)
+            result[f"device_clicks_{suffix}"] = len(device_window)
         result["ip_fingerprint_entropy_5m"] = shannon_entropy(
             fingerprint for _, fingerprint in fingerprint_values
         )

@@ -25,6 +25,25 @@ are additionally published to `click_alerts` for monitoring.
 The shared `features/` package is the feature contract for both Flink and
 Spark. Phase 2 will add its deterministic implementations and parity tests.
 
+### Phase 3 baseline (reproducible)
+
+The bootstrap-label model uses a chronological 80/20 split of the contiguous
+1M-click Phase 1 extract (no shuffled split). Its `is_fraud` label is a
+velocity-plus-near-zero-attribution heuristic and not real IVT ground truth;
+these metrics measure separation of that bootstrap signal only.
+
+| Model / experiment | ROC-AUC | PR-AUC | Fit time |
+| --- | ---: | ---: | ---: |
+| Logistic regression baseline | 0.987841 | 0.826458 | 2.191 s |
+| XGBoost speed-layer model | 0.995370 | 0.905552 | 1.299 s |
+| XGBoost warm start, W1 → W2 | 0.995041 | 0.892866 | 0.918 s |
+| XGBoost cold, W1 + W2 | 0.995370 | 0.905552 | 1.331 s |
+
+The selected validation F1 threshold is **0.859968** (F1 0.853524), rather
+than an assumed 0.5. `models/click_fraud_model.pkl`, `models/feature_list.pkl`,
+and `models/campaign_stats.json` are intentionally local artifacts; regenerate
+them with `./.venv/bin/python scripts/train_click_model.py`.
+
 ### Local setup
 
 ```bash
@@ -38,6 +57,28 @@ is mounted at `./data/hive-warehouse`, not at a machine-specific absolute
 path. Host-side dependencies are listed in `requirements.txt`; PyFlink is
 normally run inside the supplied Flink Docker image rather than installed
 natively.
+
+### Click replay and contract check
+
+Kafka messages are JSON (a deliberate local-demo tradeoff; production would
+use Avro/Protobuf plus Schema Registry). The producer keys every message by
+`ip`, preserving partition affinity for IP-keyed stream state. It replays in
+`click_time` order; `event_timestamp` is stamped immediately before publish so
+the speed layer can calculate end-to-end processing latency.
+
+```bash
+# Terminal 1: observe only new records, validate the schema, and show rate.
+./.venv/bin/python producer/schema_check_consumer.py --max-messages 100
+
+# Terminal 2: replay a small, fast demo and add a labeled click-farm burst.
+./.venv/bin/python producer/kafka_producer.py \
+  --limit 1000 --start-ts '2017-11-06 16:00:00' \
+  --speed-multiplier 3600 --inject-farms
+```
+
+`--inject-farms` emits a small set of repeat IP/device fingerprints at uniform
+gaps with `is_synthetic=1` and `is_fraud=1`. It is solely demo/reconciliation
+ground truth, never treated as an assertion about the organic TalkingData rows.
 
 ## Prior project archive (PaySim; not current)
 

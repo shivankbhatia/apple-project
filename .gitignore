@@ -11,5 +11,6 @@ data/checkpoints/
 data/delta/
 data/hive-warehouse/
 models/*.pkl
+models/*.json
 *.ipynb_checkpoints
 .ipynb_checkpoints/
