@@ -48,7 +48,10 @@ services:
       --topic click_alerts --partitions 3 --replication-factor 1
 
   flink-jobmanager:
-    image: flink:1.18.1-scala_2.12-java11
+    build:
+      context: .
+      dockerfile: flink-job/Dockerfile
+    image: fraud-lambda-flink-python:local
     container_name: flink-jobmanager
     ports:
       - "8081:8081"
@@ -62,7 +65,10 @@ services:
       - ./:/opt/fraud_lambda
 
   flink-taskmanager:
-    image: flink:1.18.1-scala_2.12-java11
+    build:
+      context: .
+      dockerfile: flink-job/Dockerfile
+    image: fraud-lambda-flink-python:local
     container_name: flink-taskmanager
     depends_on:
       - flink-jobmanager

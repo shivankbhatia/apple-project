@@ -114,7 +114,9 @@ class IncrementalClickFeatures:
 
     def enrich(self, record: Mapping[str, Any]) -> dict[str, Any]:
         result = dict(record)
-        now = parse_timestamp(result.get("timestamp", result.get("click_time")))
+        now = parse_timestamp(
+            result.get("feature_timestamp", result.get("timestamp", result.get("click_time")))
+        )        
         ip = str(result["ip"])
         device = str(result["device_id"])
         fingerprint = (device, str(result["os"]))

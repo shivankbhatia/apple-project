@@ -1,122 +1,145 @@
-# flink-job/click_scorer.py — Phase 3.3: full scoring
 import json
 import os
 import pickle
-from urllib.parse import quote
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
 
-from pyflink.datastream import StreamExecutionEnvironment, KeyedProcessFunction
-from pyflink.common import WatermarkStrategy, Types
-from pyflink.common.typeinfo import Types as TypeInfoTypes
-from pyflink.datastream.connectors.kafka import KafkaSource, KafkaOffsetsInitializer
-from pyflink.common.serialization import SimpleStringSchema
-from pyflink.datastream.state import ValueStateDescriptor
+from pyflink.common import Types, WatermarkStrategy
+from pyflink.datastream.connectors.base import DeliveryGuarantee
+from pyflink.common.serialization import Encoder, SimpleStringSchema
+from pyflink.common.time import Time
+from pyflink.datastream import KeyedProcessFunction, StreamExecutionEnvironment
 from pyflink.datastream.connectors.file_system import FileSink, OutputFileConfig
-from pyflink.common.serialization import Encoder
+from pyflink.datastream.connectors.kafka import (
+    KafkaOffsetsInitializer,
+    KafkaRecordSerializationSchema,
+    KafkaSink,
+    KafkaSource,
+)
+from pyflink.datastream.state import StateTtlConfig, ValueStateDescriptor
+
+sys.path.insert(0, "/opt/fraud_lambda")
+
+from features.click_features import IncrementalClickFeatures, vectorize
 
 
-class FraudScorer(KeyedProcessFunction):
-    """
-    Maintains per-destination transaction count (stateful) AND scores
-    each transaction using the Day 1 trained XGBoost model.
-    """
+MODEL_DIR = Path("/opt/fraud_lambda/models")
+STAGING_DIR = "/opt/fraud_lambda/data/staging"
+FLAG_THRESHOLD = 0.859968
 
+
+class ClickScorer(KeyedProcessFunction):
     def open(self, runtime_context):
-        state_descriptor = ValueStateDescriptor("dest_txn_count", TypeInfoTypes.INT())
-        self.txn_count_state = runtime_context.get_state(state_descriptor)
+        descriptor = ValueStateDescriptor(
+            "ip_click_feature_engine",
+            Types.PICKLED_BYTE_ARRAY(),
+        )
 
-        # Load model once per task instance, not per record
-        model_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "models", "click_fraud_model.pkl")
-        with open(model_path, 'rb') as f:
-            self.model = pickle.load(f)
+        ttl = (
+            StateTtlConfig.new_builder(Time.hours(2))
+            .set_update_type(StateTtlConfig.UpdateType.OnCreateAndWrite)
+            .set_state_visibility(
+                StateTtlConfig.StateVisibility.NeverReturnExpired
+            )
+            .build()
+        )
+        descriptor.enable_time_to_live(ttl)
+        self.feature_state = runtime_context.get_state(descriptor)
 
-        feature_list_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "models", "feature_list.pkl")
-        with open(feature_list_path, 'rb') as f:
-            self.feature_order = pickle.load(f)  # ensures we feed features in the exact order the model expects
+        with (MODEL_DIR / "click_fraud_model.pkl").open("rb") as source:
+            self.model = pickle.load(source)
+
+        with (MODEL_DIR / "feature_list.pkl").open("rb") as source:
+            self.feature_order = pickle.load(source)
+
+        stats = json.loads((MODEL_DIR / "campaign_stats.json").read_text())
+        self.campaign_stats = stats["campaign"]
+        self.publisher_stats = stats["publisher"]
 
     def process_element(self, value, ctx):
         try:
-            msg = json.loads(value)
-        except Exception as e:
-            yield f"PARSE ERROR: {e}"
+            click = json.loads(value)
+        except json.JSONDecodeError:
             return
-        
-        # Composite join key matching the batch layer's txn_key (Day 5)
-        msg['txn_key'] = f"{msg['nameOrig']}|{msg['nameDest']}|{msg['step']}|{msg['amount']}"
 
-        # --- stateful feature ---
-        current_count = self.txn_count_state.value()
-        if current_count is None:
-            current_count = 0
-        msg['dest_txn_count_so_far'] = current_count
-        self.txn_count_state.update(current_count + 1)
+        serialized_engine = self.feature_state.value()
+        if serialized_engine:
+            engine = pickle.loads(serialized_engine)
+        else:
+            engine = IncrementalClickFeatures()
 
-        # --- stateless features ---
-        msg['is_transfer_type'] = 1  # always true here, we pre-filtered
-        msg['amount_to_balance_ratio'] = msg['amount'] / (msg['oldbalanceOrg'] + 1)
+        # Keep shared batch/stream functions unchanged; Flink supplies a
+        # processing-time override and uses no event-time watermarks.
+        engine.campaign_stats = self.campaign_stats
+        engine.publisher_stats = self.publisher_stats
+        click["feature_timestamp"] = datetime.now(timezone.utc).isoformat()
 
-        # --- build feature vector in the exact order the model was trained on ---
-        feature_row = [[msg[f] for f in self.feature_order]]
+        scored = engine.enrich(click)
 
-        # --- score ---
-        fraud_prob = float(self.model.predict_proba(feature_row)[0][1])
-        msg['fraud_probability'] = round(fraud_prob, 6)
-        msg['is_flagged'] = int(fraud_prob >= 0.5)  # simple threshold for now
+        # Do not duplicate the batch statistics in every keyed-state record.
+        engine.campaign_stats = {}
+        engine.publisher_stats = {}
+        self.feature_state.update(pickle.dumps(engine))
 
-        yield json.dumps(msg)
+        probability = float(self.model.predict_proba([vectorize(scored)])[0][1])
+        scored["fraud_probability"] = round(probability, 6)
+        scored["is_flagged"] = int(probability >= FLAG_THRESHOLD)
+        scored["scored_at"] = datetime.now(timezone.utc).isoformat()
+
+        published_at = datetime.fromisoformat(
+            scored["event_timestamp"].replace("Z", "+00:00")
+        )
+        scored_at = datetime.fromisoformat(
+            scored["scored_at"].replace("Z", "+00:00")
+        )
+        scored["latency_ms"] = max(
+            0,
+            round((scored_at - published_at).total_seconds() * 1000, 3),
+        )
+
+        # Internal processing-time helper, not part of the output schema.
+        scored.pop("feature_timestamp", None)
+        yield json.dumps(scored)
 
 
-def is_scorable_type(raw_json):
-    try:
-        msg = json.loads(raw_json)
-        return msg['type'] in ('TRANSFER', 'CASH_OUT')
-    except Exception:
-        return False
+def extract_ip(raw_json):
+    return json.loads(raw_json)["ip"]
 
 
 def main():
     env = StreamExecutionEnvironment.get_execution_environment()
     env.set_parallelism(1)
-    env.enable_checkpointing(10000)  # checkpoint every 10 seconds - finalizes FileSink output regularly
+    env.enable_checkpointing(10_000)
 
-    jar_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "lib")
-    jar_dir_encoded = quote(jar_dir)
     env.add_jars(
-        f"file://{jar_dir_encoded}/flink-connector-kafka-3.0.2-1.18.jar",
-        f"file://{jar_dir_encoded}/kafka-clients-3.4.0.jar"
+        "file:///opt/flink-job/lib/flink-connector-kafka-3.0.2-1.18.jar",
+        "file:///opt/flink-job/lib/kafka-clients-3.4.0.jar",
     )
 
-    kafka_source = (
+    source = (
         KafkaSource.builder()
-        .set_bootstrap_servers("localhost:9092")
+        .set_bootstrap_servers("kafka:29092")
         .set_topics("clicks")
-        .set_group_id("click-scorer-group-v1")
-        .set_starting_offsets(KafkaOffsetsInitializer.earliest())
+        .set_group_id("click-scorer-v1")
+        .set_starting_offsets(KafkaOffsetsInitializer.latest())
         .set_value_only_deserializer(SimpleStringSchema())
         .build()
     )
 
-    stream = env.from_source(
-        kafka_source,
+    clicks = env.from_source(
+        source,
         WatermarkStrategy.no_watermarks(),
-        "kafka-source"
+        "clicks-kafka-source",
     )
 
-    filtered_stream = stream.filter(is_scorable_type)
-
-    def extract_dest_key(raw_json):
-        try:
-            return json.loads(raw_json)['nameDest']
-        except Exception:
-            return "UNKNOWN"
-
-    keyed_stream = filtered_stream.key_by(extract_dest_key, key_type=Types.STRING())
-    result_stream = keyed_stream.process(FraudScorer(), output_type=Types.STRING())
-
-    staging_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", "staging")
-    os.makedirs(staging_dir, exist_ok=True)
+    scored = clicks.key_by(extract_ip, key_type=Types.STRING()).process(
+        ClickScorer(),
+        output_type=Types.STRING(),
+    )
 
     file_sink = (
-        FileSink.for_row_format(staging_dir, Encoder.simple_string_encoder())
+        FileSink.for_row_format(STAGING_DIR, Encoder.simple_string_encoder())
         .with_output_file_config(
             OutputFileConfig.builder()
             .with_part_prefix("scored")
@@ -125,11 +148,27 @@ def main():
         )
         .build()
     )
+    scored.sink_to(file_sink)
 
-    result_stream.sink_to(file_sink)
+    alert_sink = (
+        KafkaSink.builder()
+        .set_bootstrap_servers("kafka:29092")
+        .set_record_serializer(
+            KafkaRecordSerializationSchema.builder()
+            .set_topic("click_alerts")
+            .set_value_serialization_schema(SimpleStringSchema())
+            .build()
+        )
+        .set_delivery_guarantee(DeliveryGuarantee.AT_LEAST_ONCE)
+        .build()
+    )
+
+    scored.filter(
+        lambda raw_json: json.loads(raw_json)["is_flagged"] == 1
+    ).sink_to(alert_sink)
 
     env.execute("click-scorer")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
