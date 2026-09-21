@@ -39,10 +39,22 @@ def load_spark(delta_path: Path, batch_table: str, hive_uri: str) -> tuple[pd.Da
     builder = (SparkSession.builder.appName("ClickReconciliation")
                .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
                .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
-               .config("hive.metastore.uris", hive_uri).enableHiveSupport())
+               .config("spark.hadoop.hive.metastore.uris", hive_uri).enableHiveSupport())
     spark = configure_spark_with_delta_pip(builder).getOrCreate()
     try:
-        return spark.read.format("delta").load(str(delta_path)).toPandas(), spark.table(batch_table).toPandas()
+        speed = spark.read.format("delta").load(str(delta_path)).toPandas()
+        try:
+            batch = spark.table(batch_table).toPandas()
+        except Exception as error:
+            portable = ROOT / "data" / "batch" / "batch_scored_clicks.parquet"
+            if not portable.exists():
+                raise RuntimeError(
+                    f"Hive table {batch_table} is unavailable and no portable batch view exists at {portable}. "
+                    "Run: python spark-batch/batch_retrain.py --skip-hive"
+                ) from error
+            print(f"Hive table unavailable; using portable batch view: {portable}")
+            batch = spark.read.parquet(str(portable)).toPandas()
+        return speed, batch
     finally:
         spark.stop()
 

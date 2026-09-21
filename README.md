@@ -88,7 +88,13 @@ JSON, and the Phase 6 chart bundle (score distributions, PR curves, replay
 drift, and alerts versus confirmations).
 
 ```bash
+# Create the delayed-label batch view. This is the recommended local path:
+# it is portable between the host Spark process and the Docker Hive container.
+./.venv/bin/python spark-batch/batch_retrain.py --skip-hive
+
 # Standard pipeline run: Delta speed table + Phase 5 Hive table.
+# If the Hive metastore table is unavailable, this automatically uses the
+# portable data/batch/batch_scored_clicks.parquet view created above.
 ./.venv/bin/python reconciliation/reconcile.py
 
 # Fast local/demo run without Spark: finalized Flink output + exported Phase 5 predictions.
@@ -101,6 +107,47 @@ The batch input/table must contain `click_id`, a batch probability
 (`batch_fraud_probability`), `batch_is_flagged`, and the delayed `is_fraud`
 label. Outputs are placed under `reconciliation/output/` and are intended to
 feed the Phase 7 dashboard.
+
+For host-side Spark, use Java 17 before running either Spark command:
+
+```bash
+export JAVA_HOME="/opt/homebrew/opt/openjdk@17"
+export PATH="$JAVA_HOME/bin:$PATH"
+```
+
+### Phase 7 — dashboard and final demo
+
+```bash
+./.venv/bin/streamlit run dashboard/app.py
+```
+
+The dashboard reads Phase 6 outputs from `reconciliation/output/` by default,
+with an adjustable path in the sidebar. It provides live/replayed alert rows,
+layer agreement and latency KPI cards, a speed-versus-batch metric comparison,
+and replay-window drift charts. It starts with a useful empty state if Phase 6
+has not yet produced artifacts.
+
+### Architecture
+
+```mermaid
+flowchart LR
+    Producer[TalkingData click replay] -->|clicks, keyed by IP| Kafka[Kafka]
+    Kafka --> Flink[PyFlink speed layer\nstateful click features + XGBoost]
+    Flink --> Alerts[click_alerts]
+    Flink --> Staging[checkpointed JSON staging]
+    Staging --> Delta[Delta: scored_clicks]
+    Historical[Delayed labels + historical clicks] --> Spark[Spark batch retraining]
+    Spark --> BatchView[Portable batch-scored Parquet]
+    Spark --> Hive[Hive: batch_scored_clicks optional]
+    Delta --> Reconcile[Phase 6 reconciliation]
+    BatchView --> Reconcile
+    Hive --> Reconcile
+    Reconcile --> Dashboard[Streamlit control room]
+```
+
+For the final demo, start the Docker services and Flink scorer, replay a small
+click-farm burst, materialize Delta, run reconciliation, then open the
+dashboard. The dashboard refresh button reloads the latest Phase 6 artifacts.
 
 ## Prior project archive (PaySim; not current)
 

@@ -50,8 +50,10 @@ result = spark.read.format("delta").load(delta_path)
 print(f"Delta table now has {result.count()} total records (deduped)")
 result.show(5, truncate=False)
 
-print("\n--- Flagged transactions sample ---")
-result.select("dest_txn_count_so_far", "fraud_probability", "is_flagged") \
+print("\n--- Flagged click sample ---")
+result.select(
+    "click_id", "ip", "ip_clicks_5m", "fraud_probability", "is_flagged", "latency_ms"
+) \
       .where("is_flagged = 1") \
       .show(20)
 
