@@ -43,7 +43,7 @@ Kafka (click event stream)
 - [x] Phase 2 — shared feature implementation and parity tests
 - [x] Phase 3 — baseline model and incremental retraining
 - [x] Phase 4 — click producer and schema validation
-- [ ] Phase 5 — PyFlink scorer and alerts
+- [x] Phase 5 — PyFlink scorer and alerts
 - [ ] Phase 6 — Spark retraining, Hive, and Delta
 - [ ] Phase 7 — reconciliation, drift, and latency reporting
 - [ ] Phase 8 — monitoring dashboard
