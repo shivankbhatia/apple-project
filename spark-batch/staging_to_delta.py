@@ -3,7 +3,7 @@
 # Reads finalized (checkpoint-committed) JSON files written by the Flink
 # scoring job's FileSink, and commits them into a Delta Lake table.
 #
-# Uses Delta's MERGE capability (idempotent upsert on transaction_id) so that
+# Uses Delta's MERGE capability (idempotent upsert on click_id) so that
 # re-running this script - e.g. periodically, or after a crash - does not
 # create duplicate records for files that were already committed.
 
@@ -36,11 +36,11 @@ if DeltaTable.isDeltaTable(spark, delta_path):
     delta_table = DeltaTable.forPath(spark, delta_path)
     (
         delta_table.alias("target")
-        .merge(df.alias("source"), "target.transaction_id = source.transaction_id")
+        .merge(df.alias("source"), "target.click_id = source.click_id")
         .whenNotMatchedInsertAll()
         .execute()
     )
-    print("Merged into existing Delta table (duplicates skipped by transaction_id)")
+    print("Merged into existing Delta table (duplicates skipped by click_id)")
 else:
     df.write.format("delta").mode("append").save(delta_path)
     print("Created new Delta table")

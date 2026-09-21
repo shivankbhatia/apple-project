@@ -80,6 +80,28 @@ the speed layer can calculate end-to-end processing latency.
 gaps with `is_synthetic=1` and `is_fraud=1`. It is solely demo/reconciliation
 ground truth, never treated as an assertion about the organic TalkingData rows.
 
+### Phase 6 — reconciliation and drift report
+
+The reconciliation job joins the speed and delayed-label batch views on the
+immutable `click_id` contract key. It writes a reusable joined extract, metric
+JSON, and the Phase 6 chart bundle (score distributions, PR curves, replay
+drift, and alerts versus confirmations).
+
+```bash
+# Standard pipeline run: Delta speed table + Phase 5 Hive table.
+./.venv/bin/python reconciliation/reconcile.py
+
+# Fast local/demo run without Spark: finalized Flink output + exported Phase 5 predictions.
+./.venv/bin/python reconciliation/reconcile.py \
+  --speed-json-dir data/staging \
+  --batch-file data/batch/batch_scored_clicks.parquet
+```
+
+The batch input/table must contain `click_id`, a batch probability
+(`batch_fraud_probability`), `batch_is_flagged`, and the delayed `is_fraud`
+label. Outputs are placed under `reconciliation/output/` and are intended to
+feed the Phase 7 dashboard.
+
 ## Prior project archive (PaySim; not current)
 
 # Real-Time Fraud Detection — Lambda Architecture
