@@ -61,7 +61,7 @@ def synthetic_farm_events(anchor: dict[str, Any], count: int, gap_seconds: int) 
     for index in range(count):
         click_time = start + timedelta(seconds=index * gap_seconds)
         ip = f"farm-{index % 3:02d}"
-        device = f"farm-device-{index % 2:02d}"
+        device = "farm-device-00"
         yield {
             "click_id": stable_click_id("synthetic-farm", ip, device, click_time.isoformat()),
             "ad_id": "farm-ad-001", "campaign_id": "farm-campaign-001", "publisher_id": "farm-publisher-001",
