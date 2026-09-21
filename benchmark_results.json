@@ -1,0 +1,41 @@
+[
+  {
+    "benchmark": "kafka_producer",
+    "num_events": 50000,
+    "sent": 50000,
+    "errors": 0,
+    "elapsed": 4.649517458019545,
+    "throughput": 10753.804120846858,
+    "status": "SUCCESS"
+  },
+  {
+    "benchmark": "feature_extraction",
+    "num_events": 50000,
+    "processed": 50000,
+    "errors": 0,
+    "elapsed": 0.5349907499912661,
+    "throughput": 93459.55981634499,
+    "latency_p50": 0.00895801349543035,
+    "latency_p95": 0.01637497916817665,
+    "latency_p99": 0.03358300746185705,
+    "latency_avg": 0.010490047237253749,
+    "latency_max": 2.2117500193417072,
+    "status": "SUCCESS"
+  },
+  {
+    "benchmark": "model_inference",
+    "num_events": 50000,
+    "inferred": 50000,
+    "errors": 0,
+    "elapsed": 8.048846124991542,
+    "throughput": 6212.070553162991,
+    "fraud_count": 4663,
+    "legitimate_count": 45337,
+    "latency_p50": 0.13287502224557102,
+    "latency_p95": 0.15604105137754232,
+    "latency_p99": 0.45458526001311866,
+    "latency_avg": 0.14096372654894368,
+    "latency_max": 5.819707992486656,
+    "status": "SUCCESS"
+  }
+]

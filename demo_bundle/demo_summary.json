@@ -1,0 +1,161 @@
+{
+  "project": "Ad-Click Fraud Detection \u2014 Lambda Architecture",
+  "dataset": "TalkingData AdTracking (1 M click sample)",
+  "pipeline": {
+    "kafka_topics": [
+      "clicks",
+      "click_alerts"
+    ],
+    "speed_layer": "PyFlink stateful stream scoring (XGBoost)",
+    "batch_layer": "Apache Spark retraining + Delta Lake / Hive",
+    "reconciliation": "Speed vs batch join on click_id; delayed is_fraud labels"
+  },
+  "model_performance": {
+    "speed_layer": {
+      "model": "XGBoost (speed model)",
+      "roc_auc": 0.995648,
+      "pr_auc": 0.915925,
+      "flag_threshold": 0.734745,
+      "train_rows": 800000,
+      "test_rows": 200000,
+      "features": [
+        "ip_clicks_1m",
+        "ip_clicks_5m",
+        "ip_clicks_1h",
+        "device_clicks_1m",
+        "device_clicks_5m",
+        "device_clicks_1h",
+        "ip_fingerprint_entropy_5m",
+        "ip_inter_click_gap_seconds",
+        "click_to_install_delta_seconds",
+        "campaign_conversion_rate",
+        "publisher_conversion_rate"
+      ]
+    },
+    "batch_layer": {
+      "model": "XGBoost (batch retrained)",
+      "roc_auc": 0.995648,
+      "pr_auc": 0.915925,
+      "flag_threshold": 0.734745,
+      "rows": 1000000
+    },
+    "baseline_logistic_regression": {
+      "roc_auc": 0.987841,
+      "pr_auc": 0.826458
+    }
+  },
+  "reconciliation": {
+    "matched_clicks": 967,
+    "layer_agreement_rate": 0.9824198552223371,
+    "agreement_rate_pct": "98.24%",
+    "speed_pr_auc": 0.9999264877819295,
+    "batch_pr_auc": 0.9999416969028647,
+    "speed_precision": 1.0,
+    "batch_precision": 1.0,
+    "speed_recall": 0.9651531151003168,
+    "batch_recall": 0.9683210137275607
+  },
+  "drift": {
+    "replay_windows": 8,
+    "recall_gap_window1_batch_minus_speed": 0.02970297029702962,
+    "recall_gap_window1_pct": "2.97%",
+    "note": "Window 1 gap quantifies the cost of not yet having retraining data: batch layer catches this many more fraud clicks in the earliest replay slice."
+  },
+  "latency_ms": {
+    "p50": 1931.719,
+    "p95": 3157.3460999999998,
+    "p99": 3261.18346
+  },
+  "campaign_intelligence": {
+    "total_campaigns": 154,
+    "top_5_flagged_campaigns": [
+      {
+        "id": "410",
+        "total_clicks": 1,
+        "flagged": 1,
+        "confirmed_fraud": 1,
+        "flag_rate": 1.0
+      },
+      {
+        "id": "356",
+        "total_clicks": 1,
+        "flagged": 1,
+        "confirmed_fraud": 1,
+        "flag_rate": 1.0
+      },
+      {
+        "id": "457",
+        "total_clicks": 7,
+        "flagged": 6,
+        "confirmed_fraud": 6,
+        "flag_rate": 0.8571428571428571
+      },
+      {
+        "id": "18",
+        "total_clicks": 45,
+        "flagged": 32,
+        "confirmed_fraud": 32,
+        "flag_rate": 0.7111111111111111
+      },
+      {
+        "id": "332",
+        "total_clicks": 3,
+        "flagged": 2,
+        "confirmed_fraud": 2,
+        "flag_rate": 0.6666666666666666
+      }
+    ]
+  },
+  "publisher_intelligence": {
+    "total_publishers": 154,
+    "top_5_flagged_publishers": [
+      {
+        "id": "410",
+        "total_clicks": 1,
+        "flagged": 1,
+        "confirmed_fraud": 1,
+        "flag_rate": 1.0
+      },
+      {
+        "id": "356",
+        "total_clicks": 1,
+        "flagged": 1,
+        "confirmed_fraud": 1,
+        "flag_rate": 1.0
+      },
+      {
+        "id": "457",
+        "total_clicks": 7,
+        "flagged": 6,
+        "confirmed_fraud": 6,
+        "flag_rate": 0.8571428571428571
+      },
+      {
+        "id": "18",
+        "total_clicks": 45,
+        "flagged": 32,
+        "confirmed_fraud": 32,
+        "flag_rate": 0.7111111111111111
+      },
+      {
+        "id": "332",
+        "total_clicks": 3,
+        "flagged": 2,
+        "confirmed_fraud": 2,
+        "flag_rate": 0.6666666666666666
+      }
+    ]
+  },
+  "incremental_retraining_experiment": {
+    "warm_start": {
+      "roc_auc": 0.99567,
+      "pr_auc": 0.919533,
+      "wall_seconds": 1.113
+    },
+    "cold_w1_w2": {
+      "roc_auc": 0.995648,
+      "pr_auc": 0.915925,
+      "wall_seconds": 1.779
+    }
+  }
+}

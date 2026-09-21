@@ -1,0 +1,2 @@
+rate,status,error
+50,INVALID,Kafka drain timeout
