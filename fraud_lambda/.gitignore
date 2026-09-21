@@ -1,0 +1,18 @@
+venv/
+__pycache__/
+*.pyc
+.DS_Store
+data/*.csv
+data/*.json
+data/*.zip
+Raw Data/
+data/staging/
+data/checkpoints/
+data/delta/
+data/hive-warehouse/
+data/batch/
+reconciliation/output/
+models/*.pkl
+models/*.json
+*.ipynb_checkpoints
+.ipynb_checkpoints/

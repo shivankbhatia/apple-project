@@ -1,0 +1,13 @@
+# Host-side tooling for the ad-click fraud pipeline.
+# PyFlink is normally executed in the provided Flink Docker image; install it
+# locally only when submitting/debugging jobs from the host.
+kafka-python
+pyspark
+delta-spark
+xgboost
+scikit-learn
+pandas
+matplotlib
+streamlit
+plotly
+pyflink
