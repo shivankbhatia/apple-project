@@ -1,0 +1,29 @@
+{
+  "model_type": "regression",
+  "target": "fraud_rate",
+  "n_ads": 214,
+  "n_features": 18,
+  "mse": 0.005471599517622833,
+  "mae": 0.03395402506454599,
+  "r2": 0.8604652598294439,
+  "feature_names": [
+    "total_clicks",
+    "unique_ips",
+    "unique_devices",
+    "unique_publishers",
+    "fraud_clicks",
+    "attributed_clicks",
+    "conversion_rate",
+    "synthetic_clicks",
+    "synthetic_rate",
+    "ip_concentration",
+    "device_concentration",
+    "os_variety",
+    "os_diversity",
+    "unique_timestamps",
+    "timestamp_concentration",
+    "unique_ip_device_pairs",
+    "ip_device_ratio",
+    "publishers_per_click"
+  ]
+}

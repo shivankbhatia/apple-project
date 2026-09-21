@@ -1,0 +1,41 @@
+{
+  "n_ads": 214,
+  "n_features": 19,
+  "fraud_ads": 11,
+  "clean_ads": 203,
+  "train_size": 171,
+  "test_size": 43,
+  "hyperparameters": {
+    "n_estimators": 120,
+    "max_depth": 6,
+    "learning_rate": 0.1,
+    "scale_pos_weight": 16.2
+  },
+  "metrics": {
+    "roc_auc": 1.0,
+    "pr_auc": 1.0,
+    "best_f1": 0.99999999995,
+    "best_threshold": 0.9900631308555603
+  },
+  "feature_names": [
+    "total_clicks",
+    "unique_ips",
+    "unique_devices",
+    "unique_publishers",
+    "fraud_clicks",
+    "fraud_rate",
+    "attributed_clicks",
+    "conversion_rate",
+    "synthetic_clicks",
+    "synthetic_rate",
+    "ip_concentration",
+    "device_concentration",
+    "os_variety",
+    "os_diversity",
+    "unique_timestamps",
+    "timestamp_concentration",
+    "unique_ip_device_pairs",
+    "ip_device_ratio",
+    "publishers_per_click"
+  ]
+}

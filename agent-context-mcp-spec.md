@@ -44,10 +44,10 @@ Kafka (click event stream)
 - [x] Phase 3 — baseline model and incremental retraining
 - [x] Phase 4 — click producer and schema validation
 - [x] Phase 5 — PyFlink scorer and alerts
-- [ ] Phase 6 — Spark retraining, Hive, and Delta
-- [ ] Phase 7 — reconciliation, drift, and latency reporting
-- [ ] Phase 8 — monitoring dashboard
-- [ ] Phase 9 — documentation and demo export
+- [x] Phase 6 — Spark retraining, Hive, and Delta
+- [x] Phase 7 — reconciliation, drift, and latency reporting
+- [x] Phase 8 — monitoring dashboard
+- [x] Phase 9 — documentation and demo export
 
 ### Reused assets
 Kafka setup, PyFlink/Spark jobs, Delta Lake schema patterns, latency instrumentation (`latency_ms`), and your incremental-retraining research all carry over directly — this is largely a feature-engineering + relabeling effort, not a rebuild.
